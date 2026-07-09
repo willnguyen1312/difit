@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { type ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
 
@@ -134,5 +135,108 @@ describe('FileList', () => {
 
     fireEvent.click(checkbox);
     expect(onToggleFolderReviewed).toHaveBeenCalledWith('src', false);
+  });
+});
+
+describe('FileList filter dropdown', () => {
+  const dropdownFiles = [
+    createFile('src/a.tsx'),
+    createFile('src/b.tsx'),
+    createFile('src/c.ts'),
+    createFile('src/d.ts'),
+    createFile('src/e.ts'),
+    createFile('README.md'),
+  ];
+
+  function renderFileList(overrides: Partial<ComponentProps<typeof FileList>> = {}) {
+    const props: ComponentProps<typeof FileList> = {
+      files: dropdownFiles,
+      onScrollToFile: vi.fn(),
+      comments: [],
+      reviewedFiles: new Set<string>(),
+      onToggleReviewed: vi.fn(),
+      onToggleFolderReviewed: vi.fn(),
+      selectedFileIndex: null,
+      ...overrides,
+    };
+    return render(<FileList {...props} />);
+  }
+
+  function openFilterMenu() {
+    fireEvent.click(screen.getByRole('button', { name: /filter files/i }));
+  }
+
+  it('lists file extensions with counts when the filter menu is opened', () => {
+    renderFileList();
+
+    expect(screen.queryByText('File extensions')).not.toBeInTheDocument();
+
+    openFilterMenu();
+
+    expect(screen.getByText('File extensions')).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: '.tsx' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('checkbox', { name: '.ts' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('checkbox', { name: '.md' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('2')).toBeVisible();
+    expect(screen.getByText('3')).toBeVisible();
+    expect(screen.getByText('1')).toBeVisible();
+  });
+
+  it('hides files of an extension when its checkbox is unchecked', () => {
+    renderFileList();
+    openFilterMenu();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '.tsx' }));
+
+    expect(screen.queryByTitle('src/a.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/b.tsx')).not.toBeInTheDocument();
+    expect(screen.getByTitle('src/c.ts')).toBeVisible();
+    expect(screen.getByTitle('README.md')).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: '.tsx' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('hides reviewed files when Viewed files is unchecked', () => {
+    renderFileList({ reviewedFiles: new Set(['src/a.tsx', 'src/c.ts']) });
+    openFilterMenu();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Viewed files' }));
+
+    expect(screen.queryByTitle('src/a.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/c.ts')).not.toBeInTheDocument();
+    expect(screen.getByTitle('src/b.tsx')).toBeVisible();
+    expect(screen.getByTitle('README.md')).toBeVisible();
+  });
+
+  it('resets text and extension filters via Clear filters', () => {
+    renderFileList();
+
+    fireEvent.change(screen.getByPlaceholderText('Filter files...'), {
+      target: { value: 'a.tsx' },
+    });
+    openFilterMenu();
+    fireEvent.click(screen.getByRole('checkbox', { name: '.ts' }));
+
+    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    expect(screen.getByPlaceholderText('Filter files...')).toHaveValue('');
+    expect(screen.getByTitle('src/a.tsx')).toBeVisible();
+    expect(screen.getByTitle('src/c.ts')).toBeVisible();
+    expect(screen.getByTitle('README.md')).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: '.ts' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('marks the filter button active when a filter is applied', () => {
+    renderFileList();
+
+    expect(screen.getByRole('button', { name: 'Filter files' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /filters active/i })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Filter files...'), {
+      target: { value: '.md' },
+    });
+
+    expect(screen.getByRole('button', { name: /filters active/i })).toBeInTheDocument();
   });
 });

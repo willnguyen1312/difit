@@ -8,6 +8,7 @@ import {
   FileX,
   FilePen,
   Search,
+  Filter,
   MessageSquare,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -15,6 +16,7 @@ import {
 import { memo, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 
 import { type DiffFile, type CommentThread } from '../../types/diff';
+import { useClickOutside } from '../hooks/useClickOutside';
 import { isSafariBrowser } from '../utils/browser';
 
 import { Checkbox } from './Checkbox';
@@ -45,6 +47,16 @@ const TREE_INDENT_STEP_PX = TREE_ICON_SIZE_PX + TREE_ROW_GAP_PX;
 
 function getTreeRowPaddingLeft(depth: number): string {
   return `${depth * TREE_INDENT_STEP_PX + TREE_ROW_PADDING_LEFT_PX}px`;
+}
+
+const NO_EXTENSION_KEY = '';
+const NO_EXTENSION_LABEL = 'No extension';
+
+function getFileExtension(path: string): string {
+  const basename = path.slice(path.lastIndexOf('/') + 1);
+  const dotIndex = basename.lastIndexOf('.');
+  if (dotIndex <= 0) return NO_EXTENSION_KEY;
+  return basename.slice(dotIndex).toLowerCase();
 }
 
 function getAllDirectoryPaths(node: TreeNode): string[] {
@@ -179,6 +191,12 @@ export const FileList = memo(function FileList({
     () => new Set(getAllDirectoryPaths(fileTree)),
   );
   const [filterText, setFilterText] = useState('');
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+  const [hiddenExtensions, setHiddenExtensions] = useState<Set<string>>(new Set());
+  const [showViewedFiles, setShowViewedFiles] = useState(true);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  useClickOutside(filterMenuRef, () => setIsFilterMenuOpen(false), isFilterMenuOpen);
 
   const commentCountMap = useMemo(() => {
     const counts = new Map<string, number>();
@@ -211,12 +229,66 @@ export const FileList = memo(function FileList({
     [fileTree, reviewedFiles],
   );
 
-  // Filter the file tree based on search text
+  const extensionCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    files.forEach((file) => {
+      const extension = getFileExtension(file.path);
+      counts.set(extension, (counts.get(extension) ?? 0) + 1);
+    });
+    return counts;
+  }, [files]);
+
+  const sortedExtensions = useMemo(
+    () =>
+      Array.from(extensionCounts.keys()).sort((a, b) => {
+        if (a === NO_EXTENSION_KEY) return 1;
+        if (b === NO_EXTENSION_KEY) return -1;
+        return a.localeCompare(b);
+      }),
+    [extensionCounts],
+  );
+
+  const hasActiveFilters =
+    filterText.trim() !== '' || hiddenExtensions.size > 0 || !showViewedFiles;
+
+  const toggleExtension = (extension: string) => {
+    setHiddenExtensions((prev) => {
+      const next = new Set(prev);
+      if (next.has(extension)) {
+        next.delete(extension);
+      } else {
+        next.add(extension);
+      }
+      return next;
+    });
+  };
+
+  const clearFilters = () => {
+    setFilterText('');
+    setHiddenExtensions(new Set());
+    setShowViewedFiles(true);
+  };
+
+  // Filter the file tree based on the search text, selected extensions, and viewed state
   const filteredFileTree = useMemo(() => {
     const normalizedFilter = filterText.trim().toLowerCase();
+    const hasNoActiveFilter = !normalizedFilter && hiddenExtensions.size === 0 && showViewedFiles;
+
+    const matchesFilters = (file: DiffFile): boolean => {
+      if (normalizedFilter && !file.path.toLowerCase().includes(normalizedFilter)) {
+        return false;
+      }
+      if (hiddenExtensions.has(getFileExtension(file.path))) {
+        return false;
+      }
+      if (!showViewedFiles && reviewedFiles.has(file.path)) {
+        return false;
+      }
+      return true;
+    };
 
     const filterTreeNode = (node: TreeNode): TreeNode | null => {
-      if (!normalizedFilter) return node;
+      if (hasNoActiveFilter) return node;
 
       if (node.isDirectory && node.children) {
         const filteredChildren = node.children
@@ -228,11 +300,7 @@ export const FileList = memo(function FileList({
         }
         return null;
       } else if (node.file) {
-        // Check if file name matches filter
-        if (node.file.path.toLowerCase().includes(normalizedFilter)) {
-          return node;
-        }
-        return null;
+        return matchesFilters(node.file) ? node : null;
       }
 
       return null;
@@ -244,7 +312,7 @@ export const FileList = memo(function FileList({
         children: [],
       }
     );
-  }, [fileTree, filterText]);
+  }, [fileTree, filterText, hiddenExtensions, showViewedFiles, reviewedFiles]);
 
   const getFileIcon = (status: DiffFile['status']) => {
     switch (status) {
@@ -476,18 +544,99 @@ export const FileList = memo(function FileList({
             </button>
           </div>
         </div>
-        <div className="relative">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 transform -translate-y-1/2 text-github-text-muted"
-          />
-          <input
-            type="text"
-            placeholder="Filter files..."
-            value={filterText}
-            onChange={(e) => setFilterText(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm bg-github-bg-primary border border-github-border rounded-md focus:outline-none focus:border-github-accent text-github-text-primary placeholder-github-text-muted"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-github-text-muted"
+            />
+            <input
+              type="text"
+              placeholder="Filter files..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm bg-github-bg-primary border border-github-border rounded-md focus:outline-none focus:border-github-accent text-github-text-primary placeholder-github-text-muted"
+            />
+          </div>
+          <div
+            className="relative z-50"
+            ref={filterMenuRef}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setIsFilterMenuOpen(false);
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setIsFilterMenuOpen((open) => !open)}
+              aria-haspopup="true"
+              aria-expanded={isFilterMenuOpen}
+              aria-label={hasActiveFilters ? 'Filter files, filters active' : 'Filter files'}
+              title="Filter files"
+              className={`relative flex items-center justify-center p-2 rounded-md border transition-colors ${
+                isFilterMenuOpen
+                  ? 'border-github-accent bg-github-bg-primary'
+                  : 'border-github-border bg-github-bg-primary hover:bg-github-bg-tertiary'
+              }`}
+            >
+              <Filter size={16} className="text-github-text-secondary" />
+              {hasActiveFilters && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-github-accent"
+                />
+              )}
+            </button>
+
+            {isFilterMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-64 rounded-md border border-github-border bg-github-bg-primary shadow-lg">
+                {sortedExtensions.length > 0 && (
+                  <div className="py-1">
+                    <div className="px-3 py-1.5 text-xs font-semibold text-github-text-secondary">
+                      File extensions
+                    </div>
+                    {sortedExtensions.map((extension) => {
+                      const label = extension === NO_EXTENSION_KEY ? NO_EXTENSION_LABEL : extension;
+                      return (
+                        <div
+                          key={extension || NO_EXTENSION_LABEL}
+                          className="flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-github-bg-tertiary"
+                        >
+                          <Checkbox
+                            checked={!hiddenExtensions.has(extension)}
+                            onChange={() => toggleExtension(extension)}
+                            label={label}
+                            title={label}
+                          />
+                          <span className="text-xs font-medium text-github-text-muted">
+                            {extensionCounts.get(extension)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="border-t border-github-border px-3 py-2">
+                  <Checkbox
+                    checked={showViewedFiles}
+                    onChange={() => setShowViewedFiles((show) => !show)}
+                    label="Viewed files"
+                    title="Viewed files"
+                  />
+                </div>
+
+                <div className="border-t border-github-border">
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="w-full px-3 py-2 text-left text-sm text-github-accent hover:bg-github-bg-tertiary"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
