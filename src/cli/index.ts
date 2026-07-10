@@ -323,10 +323,7 @@ program
 
         console.log(`\n🚀 difit server started on ${url}`);
         console.log(`📋 Reviewing: ${stdinReviewLabel}`);
-        if (options.keepAlive) {
-          console.log('🔒 Keep-alive mode: server will stay running after browser disconnects');
-        }
-        console.log('\nPress Ctrl+C to stop the server');
+        console.log('\n🛑 The server keeps running until you press Ctrl+C to stop it.');
         return;
       }
 
@@ -384,10 +381,6 @@ program
       console.log(`\n🚀 difit server started on ${url}`);
       console.log(`📋 Reviewing: ${selection.targetCommitish}`);
 
-      if (options.keepAlive) {
-        console.log('🔒 Keep-alive mode: server will stay running after browser disconnects');
-      }
-
       if (options.clean) {
         console.log('🧹 Starting with a clean slate - all existing comments will be cleared');
       }
@@ -402,6 +395,8 @@ program
       } else {
         console.log('💡 Use --open to automatically open browser\n');
       }
+
+      console.log('🛑 The server keeps running until you press Ctrl+C to stop it.\n');
 
       process.on('SIGINT', async () => {
         console.log('\n👋 Shutting down difit server...');
