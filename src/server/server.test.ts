@@ -1513,6 +1513,7 @@ describe('Server Integration Tests', () => {
       const { port, server } = await startServer({
         selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
         keepAlive: false,
+        heartbeatShutdownGraceMs: 50,
         preferredPort: 9080,
       });
       servers.push(server);
@@ -1540,6 +1541,41 @@ describe('Server Integration Tests', () => {
 
       // Without keepAlive, process.exit SHOULD have been called
       expect(process.exit).toHaveBeenCalledWith(0);
+    });
+
+    it('does not shut down when the client reconnects within the grace period', async () => {
+      const { port, server } = await startServer({
+        selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
+        keepAlive: false,
+        heartbeatShutdownGraceMs: 150,
+        preferredPort: 9085,
+      });
+      servers.push(server);
+
+      // First connection (initial page load)
+      const controllerA = new AbortController();
+      const responseA = await fetch(`http://localhost:${port}/api/heartbeat`, {
+        signal: controllerA.signal,
+      }).catch(() => null);
+      const readerA = responseA?.body?.getReader();
+      if (readerA) await readerA.read();
+
+      // Simulate a browser refresh: the old connection closes, a new one opens immediately
+      controllerA.abort();
+      const controllerB = new AbortController();
+      const responseB = await fetch(`http://localhost:${port}/api/heartbeat`, {
+        signal: controllerB.signal,
+      }).catch(() => null);
+      const readerB = responseB?.body?.getReader();
+      if (readerB) await readerB.read();
+
+      // Wait well beyond the grace period
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // The reconnect should have cancelled the pending shutdown
+      expect(process.exit).not.toHaveBeenCalled();
+
+      controllerB.abort();
     });
   });
 

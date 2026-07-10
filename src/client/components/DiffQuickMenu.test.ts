@@ -188,4 +188,45 @@ describe('DiffQuickMenu', () => {
       }),
     ).toBeInTheDocument();
   });
+
+  it('selects the full commit hash (not the abbreviation) when a commit is picked', async () => {
+    const onSelectDiff = vi.fn();
+    render(
+      createElement(DiffQuickMenu, {
+        options,
+        selection: { baseCommitish: 'HEAD', targetCommitish: '.' },
+        onSelectDiff,
+        onOpenAdvanced: vi.fn(),
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Revision menu:/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick Commit...' }));
+
+    const commitButton = await screen.findByRole('button', { name: /1f23cd1 chore/ });
+    fireEvent.click(commitButton);
+
+    expect(onSelectDiff).toHaveBeenCalledWith({
+      baseCommitish: '1f23cd1aaaaabbbbbcccccdddddeeeeefffff000^',
+      targetCommitish: '1f23cd1aaaaabbbbbcccccdddddeeeeefffff000',
+    });
+  });
+
+  it('abbreviates full commit hashes that are not in the commit list for display', () => {
+    render(
+      createElement(DiffQuickMenu, {
+        options,
+        selection: {
+          baseCommitish: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+          targetCommitish: 'cafebabecafebabecafebabecafebabecafebabe',
+        },
+        onSelectDiff: vi.fn(),
+        onOpenAdvanced: vi.fn(),
+      }),
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Revision menu: deadbee...cafebab' }),
+    ).toBeInTheDocument();
+  });
 });

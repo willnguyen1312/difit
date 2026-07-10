@@ -88,21 +88,21 @@ export class GitDiffParser {
         // Show staged changes against base commit
         const baseHash = await this.git.revparse([effectiveBaseCommitish]);
         resolvedCommit = `${shortHash(baseHash)} vs Staging Area (staged changes)`;
-        resolvedBaseCommitish = shortHash(baseHash);
+        resolvedBaseCommitish = baseHash;
         diffArgs = ['--cached', effectiveBaseCommitish];
       } else if (targetCommitish === '.') {
         // Show all uncommitted changes against base commit
         const baseHash = await this.git.revparse([effectiveBaseCommitish]);
         resolvedCommit = `${shortHash(baseHash)} vs Working Directory (all uncommitted changes)`;
-        resolvedBaseCommitish = shortHash(baseHash);
+        resolvedBaseCommitish = baseHash;
         diffArgs = [effectiveBaseCommitish];
       } else {
         // Both are regular commits: standard commit-to-commit comparison
         const targetHash = await this.git.revparse([targetCommitish]);
         const baseHash = await this.git.revparse([effectiveBaseCommitish]);
         resolvedCommit = createCommitRangeString(shortHash(baseHash), shortHash(targetHash));
-        resolvedBaseCommitish = shortHash(baseHash);
-        resolvedTargetCommitish = shortHash(targetHash);
+        resolvedBaseCommitish = baseHash;
+        resolvedTargetCommitish = targetHash;
         attributesRef = targetHash;
         diffArgs = [baseHash, targetHash];
       }
@@ -666,7 +666,7 @@ export class GitDiffParser {
     }
 
     const hash = await this.git.revparse([commitish]);
-    const value = hash.substring(0, 7);
+    const value = hash;
 
     this.resolvedCommitCache.set(commitish, {
       value,

@@ -66,6 +66,11 @@ const getCommitLabel = (commit: CommitInfo, withCaret: boolean) => {
   return withCaret ? `${commit.shortHash}^` : commit.shortHash;
 };
 
+const FULL_HASH_PATTERN = /^[0-9a-f]{40}$/i;
+
+const abbreviateHashForDisplay = (value: string): string =>
+  FULL_HASH_PATTERN.test(value) ? value.slice(0, 7) : value;
+
 const resolveDisplayLabel = (
   options: RevisionsResponse,
   value: string,
@@ -99,7 +104,8 @@ const resolveDisplayLabel = (
     if (resolvedCommit) return getCommitLabel(resolvedCommit, false);
   }
 
-  return value;
+  const displayValue = abbreviateHashForDisplay(baseValue);
+  return caret ? `${displayValue}^` : displayValue;
 };
 
 export function DiffQuickMenu({
@@ -385,9 +391,7 @@ export function DiffQuickMenu({
             {options.commits.map((commit) => (
               <button
                 key={commit.hash}
-                onClick={() =>
-                  handleSelect(createDiffSelection(`${commit.shortHash}^`, commit.shortHash))
-                }
+                onClick={() => handleSelect(createDiffSelection(`${commit.hash}^`, commit.hash))}
                 className={getItemClasses(isCommitActive(commit), false)}
                 type="button"
               >
