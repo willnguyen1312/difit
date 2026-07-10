@@ -4,15 +4,12 @@ import {
   offset,
   flip,
   shift,
-  useHover,
   useClick,
-  useFocus,
   useDismiss,
   useRole,
   useInteractions,
   FloatingFocusManager,
   FloatingPortal,
-  safePolygon,
 } from '@floating-ui/react';
 import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
@@ -48,21 +45,11 @@ export function RevisionSelector({
     whileElementsMounted: autoUpdate,
   });
 
-  const hover = useHover(context, {
-    handleClose: safePolygon(),
-  });
   const click = useClick(context);
-  const focus = useFocus(context);
   const dismiss = useDismiss(context);
   const role = useRole(context);
 
-  const { getReferenceProps, getFloatingProps } = useInteractions([
-    hover,
-    click,
-    focus,
-    dismiss,
-    role,
-  ]);
+  const { getReferenceProps, getFloatingProps } = useInteractions([click, dismiss, role]);
 
   // Check if the current value is 'working' or 'staged' special case
   const isWorkingStagedMode =
@@ -156,19 +143,19 @@ export function RevisionSelector({
       <button
         ref={refs.setReference}
         type="button"
-        className="flex items-center gap-1.5 cursor-pointer group"
+        className="flex items-center gap-1.5 cursor-pointer group min-w-0 max-w-full"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         {...getReferenceProps()}
       >
-        <span className="text-xs text-github-text-secondary">{label}:</span>
-        <div className="flex items-center gap-1 px-2 py-1 bg-github-bg-tertiary border border-github-border rounded hover:border-github-text-secondary transition-colors">
-          <code className="text-xs text-github-text-primary max-w-[150px] truncate">
+        <span className="text-xs text-github-text-secondary shrink-0">{label}:</span>
+        <div className="flex items-center gap-1 px-2 py-1 bg-github-bg-tertiary border border-github-border rounded hover:border-github-text-secondary transition-colors min-w-0">
+          <code className="text-xs text-github-text-primary min-w-0 max-w-[280px] truncate">
             {getDisplayText()}
           </code>
           <ChevronDown
             size={12}
-            className="text-github-text-secondary group-hover:text-github-text-primary transition-colors"
+            className="text-github-text-secondary group-hover:text-github-text-primary transition-colors shrink-0"
           />
         </div>
       </button>

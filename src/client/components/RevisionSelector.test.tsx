@@ -59,6 +59,21 @@ describe('RevisionSelector', () => {
     expect(commitButton).toHaveClass('border-l-diff-selected-border');
   });
 
+  it('opens on click but not on hover', () => {
+    render(<RevisionSelector label="Base" value="main" onChange={vi.fn()} options={options} />);
+
+    const button = screen.getByRole('button', { name: /Base:/ });
+    fireEvent.pointerEnter(button);
+    fireEvent.mouseEnter(button);
+    fireEvent.mouseMove(button);
+
+    expect(screen.queryByRole('button', { name: 'Working Directory' })).not.toBeInTheDocument();
+
+    fireEvent.click(button);
+
+    expect(screen.getByRole('button', { name: 'Working Directory' })).toBeInTheDocument();
+  });
+
   it('hides reserved quick preset values from the special options list', () => {
     render(
       <RevisionSelector

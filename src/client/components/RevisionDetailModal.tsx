@@ -88,7 +88,7 @@ export function RevisionDetailModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-github-bg-secondary border border-github-border rounded-lg shadow-lg w-full max-w-lg mx-4">
+      <div className="relative bg-github-bg-secondary border border-github-border rounded-lg shadow-lg w-full max-w-5xl mx-4">
         <div className="flex items-center justify-between p-4 border-b border-github-border">
           <h2 className="text-lg font-semibold text-github-text-primary">Detailed Diff</h2>
           <button
@@ -100,7 +100,7 @@ export function RevisionDetailModal({
           </button>
         </div>
         <div className="p-4 space-y-4">
-          <div className="flex items-center justify-center gap-3">
+          <div className="flex items-center justify-center gap-2">
             <RevisionSelector
               label="Base"
               value={localBase}
@@ -111,7 +111,7 @@ export function RevisionDetailModal({
               options={options}
               disabledValues={baseDisabledValues}
             />
-            <span className="text-github-text-muted">...</span>
+            <span className="text-github-text-muted shrink-0">...</span>
             <RevisionSelector
               label="Target"
               value={localTarget}
