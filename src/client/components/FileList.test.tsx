@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { type ComponentProps } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
 
 import type { DiffFile } from '../../types/diff';
@@ -27,6 +27,10 @@ function getTreeRow(title: string): HTMLElement {
 function getLabel(title: string): HTMLElement {
   return screen.getByTitle(title);
 }
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 describe('FileList', () => {
   it('renders total additions and deletions beside the file count', () => {
@@ -270,5 +274,108 @@ describe('FileList filter dropdown', () => {
     expect(screen.queryByTitle('src/c.ts')).not.toBeInTheDocument();
     expect(screen.getByTitle('src/b.tsx')).toBeVisible();
     expect(screen.getByTitle('README.md')).toBeVisible();
+  });
+
+  it('filters files with a /regex/ pattern', () => {
+    renderFileList();
+
+    const input = screen.getByPlaceholderText('Filter files...');
+    fireEvent.change(input, { target: { value: '/\\.ts$/' } });
+
+    expect(input).toHaveAttribute('aria-invalid', 'false');
+    expect(screen.getByTitle('src/c.ts')).toBeVisible();
+    expect(screen.getByTitle('src/d.ts')).toBeVisible();
+    expect(screen.getByTitle('src/e.ts')).toBeVisible();
+    expect(screen.queryByTitle('src/a.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/b.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
+  });
+
+  it('matches a /regex/ pattern case-insensitively', () => {
+    renderFileList();
+
+    fireEvent.change(screen.getByPlaceholderText('Filter files...'), {
+      target: { value: '/SRC\\/A/' },
+    });
+
+    expect(screen.getByTitle('src/a.tsx')).toBeVisible();
+    expect(screen.queryByTitle('src/b.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
+  });
+
+  it('treats a non-slash value as a literal substring, not a regex', () => {
+    renderFileList();
+
+    fireEvent.change(screen.getByPlaceholderText('Filter files...'), {
+      target: { value: '.ts' },
+    });
+
+    // Literal substring '.ts' appears in both '.ts' and '.tsx' paths
+    expect(screen.getByTitle('src/a.tsx')).toBeVisible();
+    expect(screen.getByTitle('src/c.ts')).toBeVisible();
+    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
+  });
+
+  it('marks the input invalid and shows no files for a broken /regex/', () => {
+    renderFileList();
+
+    const input = screen.getByPlaceholderText('Filter files...');
+    fireEvent.change(input, { target: { value: '/[/' } });
+
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByTitle('src/a.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/c.ts')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
+  });
+
+  it('restores hidden extensions from localStorage on mount', () => {
+    window.localStorage.setItem('difit.filterHiddenExtensions', JSON.stringify(['.tsx']));
+
+    renderFileList();
+
+    expect(screen.queryByTitle('src/a.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/b.tsx')).not.toBeInTheDocument();
+    expect(screen.getByTitle('src/c.ts')).toBeVisible();
+    expect(screen.getByTitle('README.md')).toBeVisible();
+
+    openFilterMenu();
+    expect(screen.getByRole('checkbox', { name: '.tsx' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('persists hidden extensions to localStorage when toggled off', () => {
+    renderFileList();
+    openFilterMenu();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '.tsx' }));
+
+    expect(window.localStorage.getItem('difit.filterHiddenExtensions')).toBe(
+      JSON.stringify(['.tsx']),
+    );
+  });
+
+  it('restores the Viewed files toggle from localStorage on mount', () => {
+    window.localStorage.setItem('difit.filterShowViewedFiles', 'false');
+
+    renderFileList({ reviewedFiles: new Set(['src/a.tsx', 'src/c.ts']) });
+
+    expect(screen.queryByTitle('src/a.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/c.ts')).not.toBeInTheDocument();
+    expect(screen.getByTitle('src/b.tsx')).toBeVisible();
+    expect(screen.getByTitle('README.md')).toBeVisible();
+
+    openFilterMenu();
+    expect(screen.getByRole('checkbox', { name: 'Viewed files' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+  });
+
+  it('persists the Viewed files toggle to localStorage when changed', () => {
+    renderFileList();
+    openFilterMenu();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Viewed files' }));
+
+    expect(window.localStorage.getItem('difit.filterShowViewedFiles')).toBe('false');
   });
 });

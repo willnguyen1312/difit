@@ -51,6 +51,30 @@ function getTreeRowPaddingLeft(depth: number): string {
 
 const NO_EXTENSION_KEY = '';
 const NO_EXTENSION_LABEL = 'No extension';
+const HIDDEN_EXTENSIONS_STORAGE_KEY = 'difit.filterHiddenExtensions';
+const SHOW_VIEWED_FILES_STORAGE_KEY = 'difit.filterShowViewedFiles';
+
+function getInitialHiddenExtensions(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const stored = window.localStorage.getItem(HIDDEN_EXTENSIONS_STORAGE_KEY);
+    if (!stored) return new Set();
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((value): value is string => typeof value === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function getInitialShowViewedFiles(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.localStorage.getItem(SHOW_VIEWED_FILES_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
 
 function getFileExtension(path: string): string {
   const basename = path.slice(path.lastIndexOf('/') + 1);
@@ -192,8 +216,8 @@ export const FileList = memo(function FileList({
   );
   const [filterText, setFilterText] = useState('');
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
-  const [hiddenExtensions, setHiddenExtensions] = useState<Set<string>>(new Set());
-  const [showViewedFiles, setShowViewedFiles] = useState(true);
+  const [hiddenExtensions, setHiddenExtensions] = useState<Set<string>>(getInitialHiddenExtensions);
+  const [showViewedFiles, setShowViewedFiles] = useState(getInitialShowViewedFiles);
   const filterMenuRef = useRef<HTMLDivElement>(null);
 
   useClickOutside(filterMenuRef, () => setIsFilterMenuOpen(false), isFilterMenuOpen);
@@ -251,31 +275,71 @@ export const FileList = memo(function FileList({
   const hasActiveFilters =
     filterText.trim() !== '' || hiddenExtensions.size > 0 || !showViewedFiles;
 
+  const updateHiddenExtensions = (next: Set<string>) => {
+    setHiddenExtensions(next);
+    try {
+      window.localStorage.setItem(HIDDEN_EXTENSIONS_STORAGE_KEY, JSON.stringify(Array.from(next)));
+    } catch {
+      // Ignore localStorage errors (e.g. disabled storage).
+    }
+  };
+
+  const updateShowViewedFiles = (next: boolean) => {
+    setShowViewedFiles(next);
+    try {
+      window.localStorage.setItem(SHOW_VIEWED_FILES_STORAGE_KEY, String(next));
+    } catch {
+      // Ignore localStorage errors (e.g. disabled storage).
+    }
+  };
+
   const toggleExtension = (extension: string) => {
-    setHiddenExtensions((prev) => {
-      const next = new Set(prev);
-      if (next.has(extension)) {
-        next.delete(extension);
-      } else {
-        next.add(extension);
-      }
-      return next;
-    });
+    const next = new Set(hiddenExtensions);
+    if (next.has(extension)) {
+      next.delete(extension);
+    } else {
+      next.add(extension);
+    }
+    updateHiddenExtensions(next);
   };
 
   const clearFilters = () => {
     setFilterText('');
-    setHiddenExtensions(new Set());
-    setShowViewedFiles(true);
+    updateHiddenExtensions(new Set());
+    updateShowViewedFiles(true);
   };
+
+  const { matchesFilterText, isFilterInvalid } = useMemo<{
+    matchesFilterText: (path: string) => boolean;
+    isFilterInvalid: boolean;
+  }>(() => {
+    const trimmed = filterText.trim();
+    if (!trimmed) {
+      return { matchesFilterText: () => true, isFilterInvalid: false };
+    }
+    const isRegexPattern = trimmed.length >= 2 && trimmed.startsWith('/') && trimmed.endsWith('/');
+    if (isRegexPattern) {
+      try {
+        const regex = new RegExp(trimmed.slice(1, -1), 'i');
+        return { matchesFilterText: (path: string) => regex.test(path), isFilterInvalid: false };
+      } catch {
+        return { matchesFilterText: () => false, isFilterInvalid: true };
+      }
+    }
+    const needle = trimmed.toLowerCase();
+    return {
+      matchesFilterText: (path: string) => path.toLowerCase().includes(needle),
+      isFilterInvalid: false,
+    };
+  }, [filterText]);
 
   // Filter the file tree based on the search text, selected extensions, and viewed state
   const filteredFileTree = useMemo(() => {
-    const normalizedFilter = filterText.trim().toLowerCase();
-    const hasNoActiveFilter = !normalizedFilter && hiddenExtensions.size === 0 && showViewedFiles;
+    const hasNoActiveFilter =
+      filterText.trim() === '' && hiddenExtensions.size === 0 && showViewedFiles;
 
     const matchesFilters = (file: DiffFile): boolean => {
-      if (normalizedFilter && !file.path.toLowerCase().includes(normalizedFilter)) {
+      if (!matchesFilterText(file.path)) {
         return false;
       }
       if (hiddenExtensions.has(getFileExtension(file.path))) {
@@ -312,7 +376,7 @@ export const FileList = memo(function FileList({
         children: [],
       }
     );
-  }, [fileTree, filterText, hiddenExtensions, showViewedFiles, reviewedFiles]);
+  }, [fileTree, filterText, matchesFilterText, hiddenExtensions, showViewedFiles, reviewedFiles]);
 
   const getFileIcon = (status: DiffFile['status']) => {
     switch (status) {
@@ -555,7 +619,17 @@ export const FileList = memo(function FileList({
               placeholder="Filter files..."
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-github-bg-primary border border-github-border rounded-md focus:outline-none focus:border-github-accent text-github-text-primary placeholder-github-text-muted"
+              aria-invalid={isFilterInvalid}
+              title={
+                isFilterInvalid
+                  ? 'Invalid regular expression'
+                  : 'Filter by text, or wrap in /slashes/ for a regex'
+              }
+              className={`w-full pl-9 pr-3 py-2 text-sm bg-github-bg-primary border rounded-md focus:outline-none text-github-text-primary placeholder-github-text-muted ${
+                isFilterInvalid
+                  ? 'border-github-danger focus:border-github-danger'
+                  : 'border-github-border focus:border-github-accent'
+              }`}
             />
           </div>
           <div
@@ -619,11 +693,11 @@ export const FileList = memo(function FileList({
 
                 <div
                   className="border-t border-github-border px-3 py-2 hover:bg-github-bg-tertiary cursor-pointer"
-                  onClick={() => setShowViewedFiles((show) => !show)}
+                  onClick={() => updateShowViewedFiles(!showViewedFiles)}
                 >
                   <Checkbox
                     checked={showViewedFiles}
-                    onChange={() => setShowViewedFiles((show) => !show)}
+                    onChange={() => updateShowViewedFiles(!showViewedFiles)}
                     label="Viewed files"
                     title="Viewed files"
                   />
