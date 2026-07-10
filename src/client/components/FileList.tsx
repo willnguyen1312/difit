@@ -599,7 +599,8 @@ export const FileList = memo(function FileList({
                       return (
                         <div
                           key={extension || NO_EXTENSION_LABEL}
-                          className="flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-github-bg-tertiary"
+                          className="flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-github-bg-tertiary cursor-pointer"
+                          onClick={() => toggleExtension(extension)}
                         >
                           <Checkbox
                             checked={!hiddenExtensions.has(extension)}
@@ -616,7 +617,10 @@ export const FileList = memo(function FileList({
                   </div>
                 )}
 
-                <div className="border-t border-github-border px-3 py-2">
+                <div
+                  className="border-t border-github-border px-3 py-2 hover:bg-github-bg-tertiary cursor-pointer"
+                  onClick={() => setShowViewedFiles((show) => !show)}
+                >
                   <Checkbox
                     checked={showViewedFiles}
                     onChange={() => setShowViewedFiles((show) => !show)}

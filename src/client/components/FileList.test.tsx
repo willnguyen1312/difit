@@ -239,4 +239,36 @@ describe('FileList filter dropdown', () => {
 
     expect(screen.getByRole('button', { name: /filters active/i })).toBeInTheDocument();
   });
+
+  it('toggles an extension filter when clicking the row outside the checkbox', () => {
+    renderFileList();
+    openFilterMenu();
+
+    const tsCheckbox = screen.getByRole('checkbox', { name: '.ts' });
+    expect(tsCheckbox).toHaveAttribute('aria-checked', 'true');
+    const tsRow = tsCheckbox.parentElement as HTMLElement;
+
+    fireEvent.click(within(tsRow).getByText('3'));
+
+    expect(screen.queryByTitle('src/c.ts')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/d.ts')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/e.ts')).not.toBeInTheDocument();
+    expect(screen.getByTitle('src/a.tsx')).toBeVisible();
+    expect(tsCheckbox).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('toggles Viewed files when clicking the row outside the checkbox', () => {
+    renderFileList({ reviewedFiles: new Set(['src/a.tsx', 'src/c.ts']) });
+    openFilterMenu();
+
+    const viewedRow = screen.getByRole('checkbox', { name: 'Viewed files' })
+      .parentElement as HTMLElement;
+
+    fireEvent.click(viewedRow);
+
+    expect(screen.queryByTitle('src/a.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/c.ts')).not.toBeInTheDocument();
+    expect(screen.getByTitle('src/b.tsx')).toBeVisible();
+    expect(screen.getByTitle('README.md')).toBeVisible();
+  });
 });
