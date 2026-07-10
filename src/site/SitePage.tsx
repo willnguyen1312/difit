@@ -341,7 +341,7 @@ function SitePage() {
     ? `${withBasePath('preview')}?snapshot=${encodeURIComponent(selectedRevisionId)}`
     : withBasePath('preview');
   const hasRevisionSelector = revisions.length > 0 && !datasetError && !loadingRevisions;
-  const browserAddress = 'http://localhost:4966';
+  const browserAddress = 'http://localhost:4321';
   const heroText = HERO_TEXT[language];
   const shellCommentText = SHELL_COMMENT_TEXT[language];
   const usageCommentText = USAGE_COMMENT_TEXT[language];

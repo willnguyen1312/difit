@@ -1463,7 +1463,8 @@ describe('Server Integration Tests', () => {
       });
       servers.push(server);
 
-      expect(port).toBeGreaterThanOrEqual(4966);
+      expect(port).toBeGreaterThanOrEqual(4321);
+      expect(port).toBeLessThan(4966);
     });
 
     it('starts normally without keepAlive option', async () => {
@@ -1472,7 +1473,8 @@ describe('Server Integration Tests', () => {
       });
       servers.push(server);
 
-      expect(port).toBeGreaterThanOrEqual(4966);
+      expect(port).toBeGreaterThanOrEqual(4321);
+      expect(port).toBeLessThan(4966);
     });
 
     it('does not call process.exit on client disconnect when keepAlive is true', async () => {
@@ -1502,80 +1504,36 @@ describe('Server Integration Tests', () => {
       // Disconnect by aborting
       controller.abort();
 
-      // Wait for the server's close handler + setTimeout(100ms) to run
+      // Wait for the server's close handler to run
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      // With keepAlive, process.exit should NOT have been called
+      // The server must not shut down on disconnect
       expect(process.exit).not.toHaveBeenCalled();
     });
 
-    it('calls process.exit on client disconnect when keepAlive is false', async () => {
+    it('does not shut down when a client disconnects (keepAlive false)', async () => {
       const { port, server } = await startServer({
         selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
         keepAlive: false,
-        heartbeatShutdownGraceMs: 50,
         preferredPort: 9080,
       });
       servers.push(server);
 
       // Connect to heartbeat SSE endpoint and then abort
       const controller = new AbortController();
-      const responsePromise = fetch(`http://localhost:${port}/api/heartbeat`, {
+      const response = await fetch(`http://localhost:${port}/api/heartbeat`, {
         signal: controller.signal,
-      });
+      }).catch(() => null);
+      const reader = response?.body?.getReader();
+      if (reader) await reader.read();
 
-      // Wait for the connection to be established
-      const response = await responsePromise.catch(() => null);
-      if (response) {
-        const reader = response.body?.getReader();
-        if (reader) {
-          await reader.read(); // Read the initial "connected" message
-        }
-      }
-
-      // Disconnect by aborting
+      // Disconnect by aborting (e.g. tab closed, navigated away, or refreshed)
       controller.abort();
+      // Wait well past any previously-possible shutdown delay to prove it never fires
+      await new Promise((resolve) => setTimeout(resolve, 1300));
 
-      // Wait for the server's close handler + setTimeout(100ms) to run
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Without keepAlive, process.exit SHOULD have been called
-      expect(process.exit).toHaveBeenCalledWith(0);
-    });
-
-    it('does not shut down when the client reconnects within the grace period', async () => {
-      const { port, server } = await startServer({
-        selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
-        keepAlive: false,
-        heartbeatShutdownGraceMs: 150,
-        preferredPort: 9085,
-      });
-      servers.push(server);
-
-      // First connection (initial page load)
-      const controllerA = new AbortController();
-      const responseA = await fetch(`http://localhost:${port}/api/heartbeat`, {
-        signal: controllerA.signal,
-      }).catch(() => null);
-      const readerA = responseA?.body?.getReader();
-      if (readerA) await readerA.read();
-
-      // Simulate a browser refresh: the old connection closes, a new one opens immediately
-      controllerA.abort();
-      const controllerB = new AbortController();
-      const responseB = await fetch(`http://localhost:${port}/api/heartbeat`, {
-        signal: controllerB.signal,
-      }).catch(() => null);
-      const readerB = responseB?.body?.getReader();
-      if (readerB) await readerB.read();
-
-      // Wait well beyond the grace period
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // The reconnect should have cancelled the pending shutdown
+      // The server must stay alive on disconnect regardless of the keepAlive flag
       expect(process.exit).not.toHaveBeenCalled();
-
-      controllerB.abort();
     });
   });
 

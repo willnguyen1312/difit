@@ -58,12 +58,10 @@ interface ServerOptions {
   diffMode?: DiffMode;
   repoPath?: string;
   contextLines?: number;
-  heartbeatShutdownGraceMs?: number;
 }
 
 const GENERATED_STATUS_CACHE_TTL_MS = 60_000;
 const MAX_DIFF_CACHE_ENTRIES = 8;
-const HEARTBEAT_SHUTDOWN_GRACE_MS = 1000;
 
 function createDiffCacheKey(selection: DiffSelection, ignoreWhitespace: boolean) {
   return `${getDiffSelectionKey(selection)}\u0000${ignoreWhitespace ? '1' : '0'}`;
@@ -921,14 +919,6 @@ export async function startServer(
     res.json({ success: true });
   });
 
-  // Function to output comments when server shuts down
-  function outputFinalComments() {
-    const session = getOrCreateCommentSession(currentCommentSelection);
-    if (session.threads.length > 0) {
-      console.log(formatCommentsOutput(session.threads.map(toCommentThread)));
-    }
-  }
-
   // SSE endpoint for file watching
   app.get('/api/watch', (req, res) => {
     res.writeHead(200, {
@@ -945,11 +935,8 @@ export async function startServer(
     });
   });
 
-  // SSE endpoint to detect when tab is closed
-  let activeHeartbeatConnections = 0;
-  let heartbeatShutdownTimer: ReturnType<typeof setTimeout> | null = null;
-  const heartbeatShutdownGraceMs = options.heartbeatShutdownGraceMs ?? HEARTBEAT_SHUTDOWN_GRACE_MS;
-
+  // SSE endpoint the client uses to detect whether the server is reachable.
+  // The server stays alive when clients disconnect; it only stops on Ctrl+C.
   app.get('/api/heartbeat', (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -961,48 +948,13 @@ export async function startServer(
     // Send initial heartbeat
     res.write('data: connected\n\n');
 
-    // A (re)connection arrived — cancel any pending shutdown (e.g. from a browser refresh)
-    activeHeartbeatConnections += 1;
-    if (heartbeatShutdownTimer) {
-      clearTimeout(heartbeatShutdownTimer);
-      heartbeatShutdownTimer = null;
-    }
-
     // Send heartbeat every 5 seconds
     const heartbeatInterval = setInterval(() => {
       res.write('data: heartbeat\n\n');
     }, 5000);
 
-    // When client disconnects (tab closed, navigation, refresh, etc.)
     req.on('close', () => {
       clearInterval(heartbeatInterval);
-      activeHeartbeatConnections = Math.max(0, activeHeartbeatConnections - 1);
-
-      if (options.keepAlive) {
-        console.log('Client disconnected, but server is staying alive (--keep-alive)');
-        console.log('Press Ctrl+C to stop the server');
-        return;
-      }
-
-      // Other tabs are still connected — keep running
-      if (activeHeartbeatConnections > 0) {
-        return;
-      }
-
-      // Last client gone. Wait briefly for a reconnect (e.g. a refresh) before shutting down.
-      heartbeatShutdownTimer = setTimeout(async () => {
-        heartbeatShutdownTimer = null;
-        if (activeHeartbeatConnections > 0) {
-          return;
-        }
-        console.log('Client disconnected, shutting down server...');
-
-        // Stop file watcher
-        await fileWatcher.stop();
-
-        outputFinalComments();
-        process.exit(0);
-      }, heartbeatShutdownGraceMs);
     });
   });
 
@@ -1036,7 +988,7 @@ export async function startServer(
 
   const { port, url, server } = await startServerWithFallback(
     app,
-    options.preferredPort || 4966,
+    options.preferredPort || 4321,
     options.host || 'localhost',
   );
 
