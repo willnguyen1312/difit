@@ -37,6 +37,7 @@ import { WordHighlightProvider } from './contexts/WordHighlightContext';
 import { useAppearanceSettings } from './hooks/useAppearanceSettings';
 import { useDiffComments } from './hooks/useDiffComments';
 import { useExpandedLines, type MergedChunk } from './hooks/useExpandedLines';
+import { useFileFilter } from './hooks/useFileFilter';
 import { useFileWatch } from './hooks/useFileWatch';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 import { useLazyDiffRendering } from './hooks/useLazyDiffRendering';
@@ -311,6 +312,8 @@ function App() {
     settings.autoViewedPatterns,
     resolvedSelection?.baseMode,
   );
+
+  const fileFilter = useFileFilter(viewedFiles);
 
   // Reset initialization flag when diff context changes
   useEffect(() => {
@@ -1356,6 +1359,7 @@ function App() {
                   onToggleReviewed={toggleFileReviewed}
                   onToggleFolderReviewed={toggleFolderReviewed}
                   selectedFileIndex={cursor?.fileIndex ?? null}
+                  fileFilter={fileFilter}
                 />
               </div>
               {!isMobile && (
@@ -1399,6 +1403,7 @@ function App() {
             className={`flex-1 overflow-y-auto ${showMobileCommentsBar ? 'pb-16' : ''}`}
           >
             {diffData.files.map((file, fileIndex) => {
+              if (!fileFilter.matchesFile(file)) return null;
               const fileThreads = threadsByFile.get(file.path) ?? EMPTY_COMMENT_THREADS;
               const mergedChunks =
                 getMergedChunksForVersion(mergedChunksState, diffDataVersion, file.path) ??

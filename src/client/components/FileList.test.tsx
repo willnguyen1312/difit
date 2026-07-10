@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
 
 import type { DiffFile } from '../../types/diff';
+import { useFileFilter } from '../hooks/useFileFilter';
 
 import { FileList } from './FileList';
 
@@ -17,6 +18,14 @@ const createFile = (
   deletions: totals.deletions ?? 1,
   chunks: [],
 });
+
+type FileListTestProps = Omit<ComponentProps<typeof FileList>, 'fileFilter'>;
+
+// The filter now lives in a shared hook owned by the parent; wire it up for tests.
+function FileListWithFilter(props: FileListTestProps) {
+  const fileFilter = useFileFilter(props.reviewedFiles);
+  return <FileList {...props} fileFilter={fileFilter} />;
+}
 
 function getTreeRow(title: string): HTMLElement {
   const row = screen.getByTitle(title).closest<HTMLElement>('[data-tree-row="true"]');
@@ -35,7 +44,7 @@ beforeEach(() => {
 describe('FileList', () => {
   it('renders total additions and deletions beside the file count', () => {
     render(
-      <FileList
+      <FileListWithFilter
         files={[
           createFile('README.md', { additions: 3, deletions: 1 }),
           createFile('src/client/App.tsx', { additions: 2, deletions: 4 }),
@@ -70,7 +79,7 @@ describe('FileList', () => {
       selectedFileIndex: null,
     };
     const { rerender } = render(
-      <FileList {...props} reviewedFiles={new Set(['README.md', 'src/cli/index.ts'])} />,
+      <FileListWithFilter {...props} reviewedFiles={new Set(['README.md', 'src/cli/index.ts'])} />,
     );
 
     expect(getLabel('src')).not.toHaveClass('line-through');
@@ -81,7 +90,7 @@ describe('FileList', () => {
     expect(getTreeRow('client')).not.toHaveClass('opacity-70');
 
     rerender(
-      <FileList
+      <FileListWithFilter
         {...props}
         reviewedFiles={new Set(['README.md', 'src/cli/index.ts', 'src/client/App.tsx'])}
       />,
@@ -98,7 +107,7 @@ describe('FileList', () => {
   it('marks all files in a folder as reviewed via the directory checkbox', () => {
     const onToggleFolderReviewed = vi.fn();
     render(
-      <FileList
+      <FileListWithFilter
         files={[
           createFile('src/cli/index.ts'),
           createFile('src/client/App.tsx'),
@@ -123,7 +132,7 @@ describe('FileList', () => {
   it('unmarks all files in a fully reviewed folder via the directory checkbox', () => {
     const onToggleFolderReviewed = vi.fn();
     render(
-      <FileList
+      <FileListWithFilter
         files={[createFile('src/cli/index.ts'), createFile('src/client/App.tsx')]}
         onScrollToFile={vi.fn()}
         comments={[]}
@@ -152,8 +161,8 @@ describe('FileList filter dropdown', () => {
     createFile('README.md'),
   ];
 
-  function renderFileList(overrides: Partial<ComponentProps<typeof FileList>> = {}) {
-    const props: ComponentProps<typeof FileList> = {
+  function renderFileList(overrides: Partial<FileListTestProps> = {}) {
+    const props: FileListTestProps = {
       files: dropdownFiles,
       onScrollToFile: vi.fn(),
       comments: [],
@@ -163,7 +172,7 @@ describe('FileList filter dropdown', () => {
       selectedFileIndex: null,
       ...overrides,
     };
-    return render(<FileList {...props} />);
+    return render(<FileListWithFilter {...props} />);
   }
 
   function openFilterMenu() {
@@ -211,20 +220,15 @@ describe('FileList filter dropdown', () => {
     expect(screen.getByTitle('README.md')).toBeVisible();
   });
 
-  it('resets text and extension filters via Clear filters', () => {
+  it('resets extension and viewed filters via Clear filters', () => {
     renderFileList();
-
-    fireEvent.change(screen.getByPlaceholderText('Filter files...'), {
-      target: { value: 'a.tsx' },
-    });
     openFilterMenu();
     fireEvent.click(screen.getByRole('checkbox', { name: '.ts' }));
 
-    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('src/c.ts')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
 
-    expect(screen.getByPlaceholderText('Filter files...')).toHaveValue('');
     expect(screen.getByTitle('src/a.tsx')).toBeVisible();
     expect(screen.getByTitle('src/c.ts')).toBeVisible();
     expect(screen.getByTitle('README.md')).toBeVisible();
@@ -274,58 +278,6 @@ describe('FileList filter dropdown', () => {
     expect(screen.queryByTitle('src/c.ts')).not.toBeInTheDocument();
     expect(screen.getByTitle('src/b.tsx')).toBeVisible();
     expect(screen.getByTitle('README.md')).toBeVisible();
-  });
-
-  it('filters files with a /regex/ pattern', () => {
-    renderFileList();
-
-    const input = screen.getByPlaceholderText('Filter files...');
-    fireEvent.change(input, { target: { value: '/\\.ts$/' } });
-
-    expect(input).toHaveAttribute('aria-invalid', 'false');
-    expect(screen.getByTitle('src/c.ts')).toBeVisible();
-    expect(screen.getByTitle('src/d.ts')).toBeVisible();
-    expect(screen.getByTitle('src/e.ts')).toBeVisible();
-    expect(screen.queryByTitle('src/a.tsx')).not.toBeInTheDocument();
-    expect(screen.queryByTitle('src/b.tsx')).not.toBeInTheDocument();
-    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
-  });
-
-  it('matches a /regex/ pattern case-insensitively', () => {
-    renderFileList();
-
-    fireEvent.change(screen.getByPlaceholderText('Filter files...'), {
-      target: { value: '/SRC\\/A/' },
-    });
-
-    expect(screen.getByTitle('src/a.tsx')).toBeVisible();
-    expect(screen.queryByTitle('src/b.tsx')).not.toBeInTheDocument();
-    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
-  });
-
-  it('treats a non-slash value as a literal substring, not a regex', () => {
-    renderFileList();
-
-    fireEvent.change(screen.getByPlaceholderText('Filter files...'), {
-      target: { value: '.ts' },
-    });
-
-    // Literal substring '.ts' appears in both '.ts' and '.tsx' paths
-    expect(screen.getByTitle('src/a.tsx')).toBeVisible();
-    expect(screen.getByTitle('src/c.ts')).toBeVisible();
-    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
-  });
-
-  it('marks the input invalid and shows no files for a broken /regex/', () => {
-    renderFileList();
-
-    const input = screen.getByPlaceholderText('Filter files...');
-    fireEvent.change(input, { target: { value: '/[/' } });
-
-    expect(input).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.queryByTitle('src/a.tsx')).not.toBeInTheDocument();
-    expect(screen.queryByTitle('src/c.ts')).not.toBeInTheDocument();
-    expect(screen.queryByTitle('README.md')).not.toBeInTheDocument();
   });
 
   it('restores hidden extensions from localStorage on mount', () => {

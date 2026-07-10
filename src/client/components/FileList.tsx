@@ -17,7 +17,9 @@ import { memo, useMemo, useRef, useState, type CSSProperties, type MouseEvent } 
 
 import { type DiffFile, type CommentThread } from '../../types/diff';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { type FileFilter } from '../hooks/useFileFilter';
 import { isSafariBrowser } from '../utils/browser';
+import { getFileExtension, NO_EXTENSION_KEY, NO_EXTENSION_LABEL } from '../utils/fileExtension';
 
 import { Checkbox } from './Checkbox';
 
@@ -30,6 +32,7 @@ interface FileListProps {
   onToggleReviewed: (path: string) => void;
   onToggleFolderReviewed: (path: string, reviewed: boolean) => void;
   selectedFileIndex: number | null;
+  fileFilter: FileFilter;
 }
 
 interface TreeNode {
@@ -47,40 +50,6 @@ const TREE_INDENT_STEP_PX = TREE_ICON_SIZE_PX + TREE_ROW_GAP_PX;
 
 function getTreeRowPaddingLeft(depth: number): string {
   return `${depth * TREE_INDENT_STEP_PX + TREE_ROW_PADDING_LEFT_PX}px`;
-}
-
-const NO_EXTENSION_KEY = '';
-const NO_EXTENSION_LABEL = 'No extension';
-const HIDDEN_EXTENSIONS_STORAGE_KEY = 'difit.filterHiddenExtensions';
-const SHOW_VIEWED_FILES_STORAGE_KEY = 'difit.filterShowViewedFiles';
-
-function getInitialHiddenExtensions(): Set<string> {
-  if (typeof window === 'undefined') return new Set();
-  try {
-    const stored = window.localStorage.getItem(HIDDEN_EXTENSIONS_STORAGE_KEY);
-    if (!stored) return new Set();
-    const parsed: unknown = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((value): value is string => typeof value === 'string'));
-  } catch {
-    return new Set();
-  }
-}
-
-function getInitialShowViewedFiles(): boolean {
-  if (typeof window === 'undefined') return true;
-  try {
-    return window.localStorage.getItem(SHOW_VIEWED_FILES_STORAGE_KEY) !== 'false';
-  } catch {
-    return true;
-  }
-}
-
-function getFileExtension(path: string): string {
-  const basename = path.slice(path.lastIndexOf('/') + 1);
-  const dotIndex = basename.lastIndexOf('.');
-  if (dotIndex <= 0) return NO_EXTENSION_KEY;
-  return basename.slice(dotIndex).toLowerCase();
 }
 
 function getAllDirectoryPaths(node: TreeNode): string[] {
@@ -198,7 +167,20 @@ export const FileList = memo(function FileList({
   onToggleReviewed,
   onToggleFolderReviewed,
   selectedFileIndex,
+  fileFilter,
 }: FileListProps) {
+  const {
+    filterText,
+    setFilterText,
+    isFilterInvalid,
+    hiddenExtensions,
+    toggleExtension,
+    showViewedFiles,
+    setShowViewedFiles,
+    clearFilters,
+    hasActiveFilters,
+    matchesFile,
+  } = fileFilter;
   const fileTree = useMemo(() => buildFileTree(files), [files]);
   const shouldUseStickyDirectoryHeaders = useMemo(
     () => !isSafariBrowser(typeof navigator === 'undefined' ? '' : navigator.userAgent),
@@ -214,10 +196,7 @@ export const FileList = memo(function FileList({
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(
     () => new Set(getAllDirectoryPaths(fileTree)),
   );
-  const [filterText, setFilterText] = useState('');
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
-  const [hiddenExtensions, setHiddenExtensions] = useState<Set<string>>(getInitialHiddenExtensions);
-  const [showViewedFiles, setShowViewedFiles] = useState(getInitialShowViewedFiles);
   const filterMenuRef = useRef<HTMLDivElement>(null);
 
   useClickOutside(filterMenuRef, () => setIsFilterMenuOpen(false), isFilterMenuOpen);
@@ -272,87 +251,10 @@ export const FileList = memo(function FileList({
     [extensionCounts],
   );
 
-  const hasActiveFilters =
-    filterText.trim() !== '' || hiddenExtensions.size > 0 || !showViewedFiles;
-
-  const updateHiddenExtensions = (next: Set<string>) => {
-    setHiddenExtensions(next);
-    try {
-      window.localStorage.setItem(HIDDEN_EXTENSIONS_STORAGE_KEY, JSON.stringify(Array.from(next)));
-    } catch {
-      // Ignore localStorage errors (e.g. disabled storage).
-    }
-  };
-
-  const updateShowViewedFiles = (next: boolean) => {
-    setShowViewedFiles(next);
-    try {
-      window.localStorage.setItem(SHOW_VIEWED_FILES_STORAGE_KEY, String(next));
-    } catch {
-      // Ignore localStorage errors (e.g. disabled storage).
-    }
-  };
-
-  const toggleExtension = (extension: string) => {
-    const next = new Set(hiddenExtensions);
-    if (next.has(extension)) {
-      next.delete(extension);
-    } else {
-      next.add(extension);
-    }
-    updateHiddenExtensions(next);
-  };
-
-  const clearFilters = () => {
-    setFilterText('');
-    updateHiddenExtensions(new Set());
-    updateShowViewedFiles(true);
-  };
-
-  const { matchesFilterText, isFilterInvalid } = useMemo<{
-    matchesFilterText: (path: string) => boolean;
-    isFilterInvalid: boolean;
-  }>(() => {
-    const trimmed = filterText.trim();
-    if (!trimmed) {
-      return { matchesFilterText: () => true, isFilterInvalid: false };
-    }
-    const isRegexPattern = trimmed.length >= 2 && trimmed.startsWith('/') && trimmed.endsWith('/');
-    if (isRegexPattern) {
-      try {
-        const regex = new RegExp(trimmed.slice(1, -1), 'i');
-        return { matchesFilterText: (path: string) => regex.test(path), isFilterInvalid: false };
-      } catch {
-        return { matchesFilterText: () => false, isFilterInvalid: true };
-      }
-    }
-    const needle = trimmed.toLowerCase();
-    return {
-      matchesFilterText: (path: string) => path.toLowerCase().includes(needle),
-      isFilterInvalid: false,
-    };
-  }, [filterText]);
-
   // Filter the file tree based on the search text, selected extensions, and viewed state
   const filteredFileTree = useMemo(() => {
-    const hasNoActiveFilter =
-      filterText.trim() === '' && hiddenExtensions.size === 0 && showViewedFiles;
-
-    const matchesFilters = (file: DiffFile): boolean => {
-      if (!matchesFilterText(file.path)) {
-        return false;
-      }
-      if (hiddenExtensions.has(getFileExtension(file.path))) {
-        return false;
-      }
-      if (!showViewedFiles && reviewedFiles.has(file.path)) {
-        return false;
-      }
-      return true;
-    };
-
     const filterTreeNode = (node: TreeNode): TreeNode | null => {
-      if (hasNoActiveFilter) return node;
+      if (!hasActiveFilters) return node;
 
       if (node.isDirectory && node.children) {
         const filteredChildren = node.children
@@ -364,7 +266,7 @@ export const FileList = memo(function FileList({
         }
         return null;
       } else if (node.file) {
-        return matchesFilters(node.file) ? node : null;
+        return matchesFile(node.file) ? node : null;
       }
 
       return null;
@@ -376,7 +278,7 @@ export const FileList = memo(function FileList({
         children: [],
       }
     );
-  }, [fileTree, filterText, matchesFilterText, hiddenExtensions, showViewedFiles, reviewedFiles]);
+  }, [fileTree, hasActiveFilters, matchesFile]);
 
   const getFileIcon = (status: DiffFile['status']) => {
     switch (status) {
@@ -693,11 +595,11 @@ export const FileList = memo(function FileList({
 
                 <div
                   className="border-t border-github-border px-3 py-2 hover:bg-github-bg-tertiary cursor-pointer"
-                  onClick={() => updateShowViewedFiles(!showViewedFiles)}
+                  onClick={() => setShowViewedFiles(!showViewedFiles)}
                 >
                   <Checkbox
                     checked={showViewedFiles}
-                    onChange={() => updateShowViewedFiles(!showViewedFiles)}
+                    onChange={() => setShowViewedFiles(!showViewedFiles)}
                     label="Viewed files"
                     title="Viewed files"
                   />
